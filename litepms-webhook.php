@@ -6,7 +6,7 @@
  * 
  * Формат входных данных: application/x-www-form-urlencoded
  * 
- * @version 1.0
+ * @version 1.1
  */
 
 // ============================================================
@@ -18,9 +18,15 @@ $logFile            = __DIR__ . '/litepms-webhook.log';
 $processedFile      = __DIR__ . '/litepms-processed.log';
 $leadEntityTypeId   = 1; // 1 = Лид
 
-// Пользовательские поля для связи с LitePMS
-$bookingIdField     = 'ufCrm_1790163178'; // ID брони LitePMS
-$userBookingIdField = 'ufCrm_1790163998'; // Номер брони LitePMS
+// Пользовательские поля — ID брони и номер брони
+$bookingIdField     = 'ufCrm_1790163178';
+$userBookingIdField = 'ufCrm_1790163998';
+
+// Пользовательские поля — рекламные параметры
+$roistatField       = 'ufCrmRoistat';         // Roistat
+$yclidField         = 'ufCrm_1790232672';     // Yclid
+$ymClidField        = 'ufCrm_1790232703';     // YmClid
+$etextField         = 'ufCrm_1790232726';     // Etext
 
 // Режим отладки: true — только логировать, не создавать лиды
 $DRY_RUN = false;
@@ -34,13 +40,11 @@ $maxLogSize = 10 * 1024 * 1024;
 
 $rawData = file_get_contents('php://input');
 
-// Логируем входящие данные
 writeLog($logFile, 'IN: ' . $rawData, $maxLogSize);
 
 // LitePMS отправляет данные в формате application/x-www-form-urlencoded
 parse_str($rawData, $data);
 
-// Если данные пустые — отвечаем 200 и выходим
 if (empty($data)) {
     http_response_code(200);
     echo 'OK';
@@ -89,13 +93,19 @@ switch ($eventType) {
     case 'booking_module':
     case 'channel_manager_booking':
 
-        // ЗАЩИТА ОТ ДУБЛЕЙ — проверяем, нет ли уже лида
-        $existingLeadId = findExistingLead($bookingId, $userBookingId, $leadEntityTypeId, $bookingIdField, $userBookingIdField, $bitrixWebhookUrl, $logFile, $maxLogSize);
+        $existingLeadId = findExistingLead(
+            $bookingId, $userBookingId,
+            $leadEntityTypeId, $bookingIdField, $userBookingIdField,
+            $bitrixWebhookUrl, $logFile, $maxLogSize
+        );
 
         if ($existingLeadId) {
             writeLog($logFile, 'LEAD ALREADY EXISTS (ID: ' . $existingLeadId . ') for booking_id=' . $bookingId, $maxLogSize);
 
-            $fields = buildLeadFields($data, $bookingIdField, $userBookingIdField);
+            $fields = buildLeadFields(
+                $data, $bookingIdField, $userBookingIdField,
+                $roistatField, $yclidField, $ymClidField, $etextField
+            );
             unset($fields['sourceId'], $fields['sourceDescription']);
 
             if (!$DRY_RUN) {
@@ -106,7 +116,10 @@ switch ($eventType) {
                 ], $bitrixWebhookUrl, $logFile, $maxLogSize);
             }
         } else {
-            $fields = buildLeadFields($data, $bookingIdField, $userBookingIdField);
+            $fields = buildLeadFields(
+                $data, $bookingIdField, $userBookingIdField,
+                $roistatField, $yclidField, $ymClidField, $etextField
+            );
 
             if ($DRY_RUN) {
                 writeLog($logFile, 'DRY RUN: would create lead: ' . json_encode($fields, JSON_UNESCAPED_UNICODE), $maxLogSize);
@@ -123,7 +136,6 @@ switch ($eventType) {
     // ПРЕДВАРИТЕЛЬНАЯ ЗАЯВКА → СОЗДАЁМ ЛИД
     // --------------------------------------------------------
     case 'booking_module_request':
-        // Защита от дублей по телефону и дате
         $phone = $data['phone'] ?? '';
         if (!empty($phone)) {
             $dupCheck = callBitrix('crm.item.list', [
@@ -169,10 +181,17 @@ switch ($eventType) {
     // ИЗМЕНЕНИЕ БРОНИ → ОБНОВЛЯЕМ ЛИД
     // --------------------------------------------------------
     case 'edit_booking':
-        $leadId = findExistingLead($bookingId, $userBookingId, $leadEntityTypeId, $bookingIdField, $userBookingIdField, $bitrixWebhookUrl, $logFile, $maxLogSize);
+        $leadId = findExistingLead(
+            $bookingId, $userBookingId,
+            $leadEntityTypeId, $bookingIdField, $userBookingIdField,
+            $bitrixWebhookUrl, $logFile, $maxLogSize
+        );
 
         if ($leadId) {
-            $fields = buildLeadFields($data, $bookingIdField, $userBookingIdField);
+            $fields = buildLeadFields(
+                $data, $bookingIdField, $userBookingIdField,
+                $roistatField, $yclidField, $ymClidField, $etextField
+            );
             unset($fields['sourceId'], $fields['sourceDescription']);
 
             if (!$DRY_RUN) {
@@ -185,8 +204,10 @@ switch ($eventType) {
                 writeLog($logFile, 'DRY RUN: would update lead #' . $leadId, $maxLogSize);
             }
         } else {
-            // Лид не найден — создаём
-            $fields = buildLeadFields($data, $bookingIdField, $userBookingIdField);
+            $fields = buildLeadFields(
+                $data, $bookingIdField, $userBookingIdField,
+                $roistatField, $yclidField, $ymClidField, $etextField
+            );
 
             if (!$DRY_RUN) {
                 $result = callBitrix('crm.item.add', [
@@ -201,7 +222,11 @@ switch ($eventType) {
     // УДАЛЕНИЕ БРОНИ → ОТМЕЧАЕМ ЛИД КАК ОТМЕНЁННЫЙ
     // --------------------------------------------------------
     case 'delete_booking':
-        $leadId = findExistingLead($bookingId, $userBookingId, $leadEntityTypeId, $bookingIdField, $userBookingIdField, $bitrixWebhookUrl, $logFile, $maxLogSize);
+        $leadId = findExistingLead(
+            $bookingId, $userBookingId,
+            $leadEntityTypeId, $bookingIdField, $userBookingIdField,
+            $bitrixWebhookUrl, $logFile, $maxLogSize
+        );
 
         if ($leadId) {
             $lead = callBitrix('crm.item.get', [
@@ -233,7 +258,11 @@ switch ($eventType) {
     // ОНЛАЙН-ПЛАТЁЖ → ДОБАВЛЯЕМ ИНФОРМАЦИЮ В ЛИД
     // --------------------------------------------------------
     case 'booking_module_payment':
-        $leadId = findExistingLead($bookingId, $userBookingId, $leadEntityTypeId, $bookingIdField, $userBookingIdField, $bitrixWebhookUrl, $logFile, $maxLogSize);
+        $leadId = findExistingLead(
+            $bookingId, $userBookingId,
+            $leadEntityTypeId, $bookingIdField, $userBookingIdField,
+            $bitrixWebhookUrl, $logFile, $maxLogSize
+        );
 
         if ($leadId) {
             $lead = callBitrix('crm.item.get', [
@@ -244,7 +273,6 @@ switch ($eventType) {
             $currentComments = $lead['result']['item']['comments'] ?? '';
             $paymentMarker = 'ID счёта: ' . ($data['invoice_id'] ?? 'N/A');
 
-            // Защита от повторной записи платежа
             if (strpos($currentComments, $paymentMarker) !== false) {
                 writeLog($logFile, 'PAYMENT ALREADY RECORDED (invoice_id=' . ($data['invoice_id'] ?? '') . ')', $maxLogSize);
                 break;
@@ -299,11 +327,7 @@ exit;
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ============================================================
 
-/**
- * Запись в лог с ограничением размера
- */
 function writeLog($logFile, $message, $maxSize) {
-    // Проверяем размер и обрезаем при превышении
     if (file_exists($logFile) && filesize($logFile) > $maxSize) {
         $lines = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         $lines = array_slice($lines, -1000);
@@ -317,9 +341,6 @@ function writeLog($logFile, $message, $maxSize) {
     );
 }
 
-/**
- * Проверка, обработано ли уже событие
- */
 function isEventProcessed($processedFile, $eventHash) {
     if (!file_exists($processedFile)) {
         return false;
@@ -329,13 +350,9 @@ function isEventProcessed($processedFile, $eventHash) {
     return in_array($eventHash, $events);
 }
 
-/**
- * Отметить событие как обработанное
- */
 function markEventProcessed($processedFile, $eventHash, $maxSize) {
     file_put_contents($processedFile, $eventHash . PHP_EOL, FILE_APPEND | LOCK_EX);
 
-    // Ограничиваем размер
     if (file_exists($processedFile) && filesize($processedFile) > $maxSize) {
         $events = file($processedFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         $events = array_slice($events, -5000);
@@ -343,9 +360,6 @@ function markEventProcessed($processedFile, $eventHash, $maxSize) {
     }
 }
 
-/**
- * Вызов метода Битрикс24 через входящий вебхук
- */
 function callBitrix($method, $params, $bitrixWebhookUrl, $logFile, $maxSize) {
     $url = $bitrixWebhookUrl . $method . '.json';
 
@@ -365,9 +379,6 @@ function callBitrix($method, $params, $bitrixWebhookUrl, $logFile, $maxSize) {
     return json_decode($response, true);
 }
 
-/**
- * Поиск существующего лида по booking_id или user_booking_id
- */
 function findExistingLead($bookingId, $userBookingId, $entityTypeId, $bookingIdField, $userBookingIdField, $bitrixWebhookUrl, $logFile, $maxSize) {
     $filters = [];
 
@@ -397,10 +408,7 @@ function findExistingLead($bookingId, $userBookingId, $entityTypeId, $bookingIdF
     return null;
 }
 
-/**
- * Формирование полей лида из данных LitePMS
- */
-function buildLeadFields($data, $bookingIdField, $userBookingIdField) {
+function buildLeadFields($data, $bookingIdField, $userBookingIdField, $roistatField, $yclidField, $ymClidField, $etextField) {
     // Заголовок
     $title = 'Бронирование LitePMS';
     $clientName = trim(($data['client_surname'] ?? '') . ' ' . ($data['client_name'] ?? ''));
@@ -436,7 +444,6 @@ function buildLeadFields($data, $bookingIdField, $userBookingIdField) {
         $comments[] = 'Стоимость проживания: ' . $data['stayprice'];
     }
 
-    // Статус брони
     $statuses = [
         1 => 'Не подтверждено', 2 => 'Подтверждено', 3 => 'Отменено',
         4 => 'Выезд', 5 => 'Незаезд', 6 => 'Проживание',
@@ -446,7 +453,6 @@ function buildLeadFields($data, $bookingIdField, $userBookingIdField) {
         $comments[] = 'Статус: ' . $statuses[$data['status_id']];
     }
 
-    // Комментарии
     if (!empty($data['comment'])) {
         $comments[] = 'Комментарий: ' . $data['comment'];
     }
@@ -454,7 +460,7 @@ function buildLeadFields($data, $bookingIdField, $userBookingIdField) {
         $comments[] = 'Комментарий клиента: ' . $data['client_booking_comment'];
     }
 
-    // UTM-метки (для справки)
+    // UTM-метки (для справки в комментарии)
     if (!empty($data['utm_data']) && is_array($data['utm_data'])) {
         $utmParts = [];
         foreach ($data['utm_data'] as $k => $v) {
@@ -465,7 +471,6 @@ function buildLeadFields($data, $bookingIdField, $userBookingIdField) {
         }
     }
 
-    // Рекламные параметры
     if (!empty($data['yclid']))   $comments[] = 'yclid: ' . $data['yclid'];
     if (!empty($data['etext']))   $comments[] = 'etext: ' . $data['etext'];
     if (!empty($data['ym_clid']) && $data['ym_clid'] != '0') {
@@ -487,7 +492,7 @@ function buildLeadFields($data, $bookingIdField, $userBookingIdField) {
     if (!empty($data['client_surname']))    $fields['lastName'] = $data['client_surname'];
     if (!empty($data['client_middlename'])) $fields['secondName'] = $data['client_middlename'];
 
-    // Мультиполя: телефон, email, адрес
+    // Мультиполя
     $fm = [];
     if (!empty($data['client_phone'])) {
         $fm[] = ['typeId' => 'PHONE', 'valueType' => 'WORK', 'value' => $data['client_phone']];
@@ -502,7 +507,6 @@ function buildLeadFields($data, $bookingIdField, $userBookingIdField) {
         $fields['fm'] = $fm;
     }
 
-    // Дата рождения
     if (!empty($data['client_birthday']) && $data['client_birthday'] != '0000-00-00') {
         $fields['birthdate'] = $data['client_birthday'];
     }
@@ -520,21 +524,19 @@ function buildLeadFields($data, $bookingIdField, $userBookingIdField) {
     }
 
     // ============================================================
-    // ROISTAT — LitePMS уже передаёт это поле
+    // ROISTAT и рекламные параметры — в пользовательские поля
     // ============================================================
     if (!empty($data['roistat'])) {
-        $fields['roistat'] = $data['roistat'];
+        $fields[$roistatField] = $data['roistat'];
     }
-
-    // yclid и ym_clid — в отдельные поля (создайте их в CRM)
     if (!empty($data['yclid'])) {
-        $fields['ufCrm_Yclid'] = $data['yclid'];
+        $fields[$yclidField] = $data['yclid'];
     }
     if (!empty($data['ym_clid']) && $data['ym_clid'] != '0') {
-        $fields['ufCrm_YmClid'] = $data['ym_clid'];
+        $fields[$ymClidField] = $data['ym_clid'];
     }
     if (!empty($data['etext'])) {
-        $fields['ufCrm_Etext'] = $data['etext'];
+        $fields[$etextField] = $data['etext'];
     }
 
     return $fields;
