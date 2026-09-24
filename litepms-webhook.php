@@ -217,8 +217,8 @@ switch ($eventType) {
                     'entityTypeId' => $leadEntityTypeId,
                     'id' => $leadId,
                     'fields' => [
-                        'title' => '❌ ОТМЕНЕНО: ' . $currentTitle,
-                        'comments' => $currentComments . "\n\n=== ❌ БРОНЬ УДАЛЕНА В LitePMS ===\n"
+                        'title' => 'ОТМЕНЕНО: ' . $currentTitle,
+                        'comments' => $currentComments . "\n\n=== БРОНЬ УДАЛЕНА В LitePMS ===\n"
                             . "Дата удаления: " . date('Y-m-d H:i:s'),
                         'statusId' => 'JUNK'
                     ]
@@ -250,7 +250,7 @@ switch ($eventType) {
                 break;
             }
 
-            $paymentInfo = "\n\n=== 💰 ПОСТУПИЛ ОНЛАЙН-ПЛАТЁЖ ===\n"
+            $paymentInfo = "\n\n=== ПОСТУПИЛ ОНЛАЙН-ПЛАТЁЖ ===\n"
                 . "Дата: " . ($data['date'] ?? '') . "\n"
                 . "Сумма: " . ($data['price'] ?? 0) . "\n"
                 . "Платёжный сервис: " . ($data['pay_service'] ?? 'N/A') . "\n"
