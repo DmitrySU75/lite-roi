@@ -13,7 +13,7 @@
 // 1. НАСТРОЙКИ
 // ============================================================
 
-$bitrixWebhookUrl   = 'https://contact-center.bitrix24.ru/rest/1183/lysxly5aafgtv6r5/';
+$bitrixWebhookUrl   = 'https://contact-center.bitrix24.ru/rest/1183//';
 $logFile            = __DIR__ . '/litepms-webhook.log';
 $processedFile      = __DIR__ . '/litepms-processed.log';
 $leadEntityTypeId   = 1; // 1 = Лид
